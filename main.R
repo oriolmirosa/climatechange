@@ -70,8 +70,7 @@ for (year in 2004:2017) {
   }
 }
 
-# We now have a total of #, which means that we got # new links for 'global
-# warming'
+# We got 7511 links for 'global warming'
 
 length(linksGlobalWarming)
 
@@ -81,9 +80,11 @@ length(linksGlobalWarming)
 linksTownhallGlobalWarming <- linksGlobalWarming
 save(linksTownhallGlobalWarming, file = 'linksTownhallGlobalWarming.Rda')
 
-# Let's join together the links from the two searches
+# Let's join together the links from the two searches, with a total of 14815
+# links
 
 linksTownhall <- c(linksTownhallClimateChange, linksTownhallGlobalWarming)
+length(linksTownhall)
 
 # After studying the form of the links from Google, we will now clean them in
 # order to obtain the links necessary to reach the valid articles
@@ -94,10 +95,12 @@ linksTownhall <- gsub('/url\\?q=', '', linksTownhall)
 linksTownhall <- gsub("(.+n[0-9]{6,7}).*", "\\1", linksTownhall)
 linksTownhall <- gsub("%25E2%2580%2599", "’", linksTownhall)
 linksTownhall <- gsub("%3Fpage%3D1", "", linksTownhall)
-noNumberlinks <- which(!grepl('.+n[0-9]{6,7}$', linksTownhall))
+linksTownhall <- gsub("%25C3%25A9", "é", linksTownhall)
+linksTownhall <- gsub("%25E2%2580%2599", "’", linksTownhall)
 
 # These lines remove the links that are not articles (basically the author
 # pages for each Townhall author)
+
 for (i in length(linksTownhall):1) {
   if (!grepl("n[0-9]{6,7}", linksTownhall[i]) && !grepl(".+/[0-9]{4}/[0-9]{2}/[0-9]{2}/.+", linksTownhall[i])) {
     linksBad <-append(linksBad, linksTownhall[i])
@@ -106,8 +109,10 @@ for (i in length(linksTownhall):1) {
   }
 }
 linksTownhall <- gsub('(.+)&sa=.+', '\\1', linksTownhall)
+linksTownhall <- gsub('http://', 'https://', linksTownhall)
+linksTownhall <- gsub('https://www\\.', 'https://', linksTownhall)
 
-# We are left with X links
+# At this point, we are left with 14326 links
 
 length(linksTownhall)
 
@@ -116,18 +121,47 @@ length(linksTownhall)
 
 linksTownhall <- unique(linksTownhall)
 
-# In the end, we have X different articles
+# In the end, we have only 962 different links to articles
 
 length(linksTownhall)
 
+# Townhall links have a number (starting with n and followed by 6 or 7 digits),
+# yet the link will work even if the number is absent. If any of our links are
+# do not have the number it is possible that they are duplicated and we haven't
+# caught them (because they appear both with and without the number on the
+# list). Let's see how many links do not have the number
+
+noNumberLinks <- which(!grepl('.+n[0-9]{6,7}$', linksTownhall))
+length(noNumberLinks)
+
+# There's 30 links without the number. We could deal with the duplicates
+# later, when we have downloaded the data and we can find repeated titles,
+# but that means that we could potentially hit the servers to download articles
+# more times than necessary, so we'll deal with this now
+
+# Let's see if any of the links without number coincide with the other links
+
+numberLinks <- !seq(1, 976) %in% noNumberLinks
+
+for (i in length(noNumberLinks):1) {
+  if (sum(grepl(paste0('^', linksTownhall[noNumberLinks[i]], '.*'), linksTownhall[numberLinks])) > 0) {
+    cat(paste0('The link: ', linksTownhall[noNumberLinks[i]], ' is duplicated\n\n'))
+  }
+}
+
+# We get no answers, so there don't seem to be any duplicates. In any case, we
+# will check again later when we have downloaded all articles
+
 # Now that we have all the links for the articles, we are ready to go through
-# them and extract the relevant data
+# them and extract the relevant data. But first, let's save these data to disk
+
+save(linksTownhall, file = 'linksTownhall.Rda')
 
 # Here we set up the tibble where we will introduce all the info that we need
 
 library(tibble)
 library(lubridate)
-transcript <- tibble(title=character(), author=character(), date=as.Date(character()), body=character())
+transcriptTownhall <- tibble(title=character(), author=character(), date=as.Date(character()), body=character())
 
 # Now we go through all the links, extract the info that we need from each
 # page, and put it in the 'transcript' tibble
@@ -137,9 +171,9 @@ badLinks <- vector(mode='character', length=0)
 for (i in 1:length(linksTownhall)) {
   page <- try(read_html(linksTownhall[i]))
   
-  if (class(page) == "try-error") {
+  if (class(page)[1] == "try-error") {
     cat(paste0("Error downloading link #: ", i, "\n"))
-    transcript[i,]$title <- "error"
+    transcriptTownhall[i,]$title <- "error"
     badLinks <- c(badLinks, linksTownhall[i])
     next
   }
@@ -160,32 +194,56 @@ for (i in 1:length(linksTownhall)) {
   
   body <- paste(body, collapse="\n")
   
-  transcript[i,]$title <- title
-  transcript[i,]$author <- author
-  transcript[i,]$date <- date
-  transcript[i,]$body <- body
+  transcriptTownhall[i,]$title <- title
+  transcriptTownhall[i,]$author <- author
+  transcriptTownhall[i,]$date <- date
+  transcriptTownhall[i,]$body <- body
 }
 
 # There seem to be a few rows where there was a problem. We could fix them
 # manually, but given that it is only two of them, we will just delete them
-transcript <- transcript[!is.na(transcript$date) | !is.na(transcript$author),]
+transcriptTownhall <- transcriptTownhall[!is.na(transcriptTownhall$date) | !is.na(transcriptTownhall$author),]
 
 # Now that we have the tibble, let's see if there are any duplicates
-sum(duplicated(transcript))
+sum(duplicated(transcriptTownhall))
 
-# We have 14 duplicates, so we will just remove them
-transcript <- transcript[!duplicated(transcript),]
+# We have 4 duplicates, so we will just remove them
+transcriptTownhall <- transcriptTownhall[!duplicated(transcriptTownhall),]
 
-# Since we had 790 rows left before this step, we should now have 776. Let's
-# verify it
-nrow(transcript)
+# We are left with a data frame with 956 rows
+nrow(transcriptTownhall)
 
-# Yep! Before we move on to other sources, let's quickly see the number of
+# The last thing we should do is make sure that all these articles really
+# discuss climate change. We will search for 'climate change' and 'global
+# warming in the body field of the data frame
+
+sum(!grepl('(climate change|global warming)', transcriptTownhall$body))
+
+# Hmmm... 492 articles where climate change or global warming do not appear,
+# more than half of the total we got! Let's visually explore a couple of them
+# to confirm
+
+cat(transcriptTownhall$body[sample(which(!grepl('(climate change|global warming)', transcriptTownhall$body)), 2)])
+
+# These don't seem to be related to climate change or global warming at all, so
+# we will erase all the rows that don't contain these terms
+
+transcriptTownhall <- transcriptTownhall[-which(!grepl('(climate change|global warming)', transcriptTownhall$body)), ]
+
+# We are, in the end, left with a data frame with 464 rows
+
+nrow(transcriptTownhall)
+
+# Let's save this tibble
+
+save(transcriptTownhall, file = 'transcriptTownhall.Rda')
+
+# Before we move on to other sources, let's quickly see the number of
 # articles by year and by author
 
-table(format(transcript$date, '%Y'))
+table(format(transcriptTownhall$date, '%Y'))
 
-sort(table(transcript$author), decreasing = TRUE)
+sort(table(transcriptTownhall$author), decreasing = TRUE)
 
 # As we can see, most of the articles are concentrated in the most recent
 # years, and a few authors have a large number of articles, and many authors
@@ -198,38 +256,79 @@ sort(table(transcript$author), decreasing = TRUE)
 # We will employ the same course of action as with townhall.com, but searching
 # on rushlimbaugh.com
 
-links <- vector(mode="character", length=0)
+linksClimateChange <- vector(mode="character", length=0)
 linksBad <- vector(mode="character", length=0)
 
+numLinksTotal = 0
 for (year in 2006:2017) {
   i = 0
+  numLinksYear = 0
   while (TRUE) {
     searchpage <- paste0("https://www.google.com/search?q=%22climate+change%22+site%3Arushlimbaugh.com%2Fdaily&rlz=1C5CHFA_enUS733US733&source=lnt&tbs=cdr%3A1%2Ccd_min%3A1%2F1%2F", year, "%2Ccd_max%3A12%2F31%2F", year, "&start=", i * 10)
     linkspage <- read_html(searchpage)
     linksnew <- linkspage %>% html_nodes("h3 a") %>% html_attr("href")
     if (length(linksnew) == 0) break
-    links <- c(links, linksnew)
+    linksClimateChange <- c(linksClimateChange, linksnew)
+    numLinksYear = numLinksYear + length(linksnew)
+    numLinksTotal = numLinksTotal + length(linksnew)
+    cat(paste0('Downloaded ', length(linksnew), ' links from page ', i, ' of year ', year, '\n'))
+    cat(paste0('Links downloaded for year ', year, ': ', numLinksYear, '\n'))
+    cat(paste0('Total \'global warming\' links downloaded so far: ', numLinksTotal, '\n\n'))
     i = i + 1
-    Sys.sleep(sample(seq(15, 30), 1))
+    Sys.sleep(sample(seq(60, 75), 1))
   }
 }
 
+# We have 2008 links at this point:
+
+length(linksClimateChange)
+
+# Let's back these up before we move on so that we don't have to fetch them again
+
+linksLimbaughClimateChange <- linksClimateChange
+save(linksLimbaughClimateChange, file = 'linksLimbaughClimateChange.Rda')
+
 # Now we get the links for 'global warming'
 
-for (year in 2006:2017) {
+linksGlobalWarming <- vector(mode="character", length=0)
+
+numLinksTotal = 0
+for (year in 2004:2017) {
   i = 0
+  numLinksYear = 0
   while (TRUE) {
     searchpage <- paste0("https://www.google.com/search?q=%22global+warming%22+site%3Arushlimbaugh.com%2Fdaily&rlz=1C5CHFA_enUS733US733&source=lnt&tbs=cdr%3A1%2Ccd_min%3A1%2F1%2F", year, "%2Ccd_max%3A12%2F31%2F", year, "&start=", i * 10)
     linkspage <- read_html(searchpage)
     linksnew <- linkspage %>% html_nodes("h3 a") %>% html_attr("href")
     if (length(linksnew) == 0) break
-    links <- c(links, linksnew)
+    linksGlobalWarming <- c(linksGlobalWarming, linksnew)
+    numLinksYear = numLinksYear + length(linksnew)
+    numLinksTotal = numLinksTotal + length(linksnew)
+    cat(paste0('Downloaded ', length(linksnew), ' links from page ', i, ' of year ', year, '\n'))
+    cat(paste0('Links downloaded for year ', year, ': ', numLinksYear, '\n'))
+    cat(paste0('Total \'global warming\' links downloaded so far: ', numLinksTotal, '\n\n'))
     i = i + 1
-    Sys.sleep(sample(seq(15, 30), 1))
+    Sys.sleep(sample(seq(60, 75), 1))
   }
 }
 
-linksBackUp <- links
+# We got 1861 links for 'global warming'
+
+length(linksGlobalWarming)
+
+# Once more, let's save the links as we have them now in case we need to reuse
+# them
+
+linksLimbaughGlobalWarming <- linksGlobalWarming
+save(linksLimbaughGlobalWarming, file = 'linksLimbaughGlobalWarming.Rda')
+
+# Let's join together the links from the two searches, with a total of 3869
+# links
+
+linksLimbaugh <- c(linksLimbaughClimateChange, linksLimbaughGlobalWarming)
+length(linksLimbaugh)
+
+# XXXX
 
 links <- gsub('/url\\?q=', '', links)
 links <- gsub('(.+)&sa=.+', '\\1', links)
